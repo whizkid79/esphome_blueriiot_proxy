@@ -1,0 +1,349 @@
+json:
+
+http_request:
+  id: blueriiot_http
+  useragent: "BlueConnect/3.2.1"
+  timeout: 20s
+  verify_ssl: true
+  buffer_size_rx: 4096
+  buffer_size_tx: 2048
+
+globals:
+  - id: blueriiot_access_key
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: blueriiot_secret_key
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: blueriiot_session_token
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: blueriiot_amz_date
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: blueriiot_date_stamp
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: blueriiot_measure_created
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: blueriiot_measure_body
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: blueriiot_authorization
+    type: std::string
+    restore_value: no
+    initial_value: '""'
+  - id: blueriiot_offset_sync_requested
+    type: bool
+    restore_value: no
+    initial_value: "false"
+  - id: blueriiot_api_readback_valid
+    type: bool
+    restore_value: no
+    initial_value: "false"
+  - id: blueriiot_api_temperature
+    type: float
+    restore_value: no
+    initial_value: "0.0"
+  - id: blueriiot_api_ph
+    type: float
+    restore_value: no
+    initial_value: "0.0"
+  - id: blueriiot_api_orp
+    type: float
+    restore_value: no
+    initial_value: "0.0"
+
+script:
+  - id: script_${blueriiot_id_prefix}_sync_offsets_from_api
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: return id(switch_${blueriiot_id_prefix}_api_enabled).state;
+          then:
+            - lambda: |-
+                id(blueriiot_offset_sync_requested) = true;
+                id(component_${blueriiot_id_prefix}).publish_status("OFFSET_SYNC_REQUESTED");
+            - if:
+                condition:
+                  lambda: return id(component_${blueriiot_id_prefix}).has_fresh_packet(120000);
+                then:
+                  - script.execute: script_${blueriiot_id_prefix}_submit_raw_measure
+                else:
+                  - script.execute: script_${blueriiot_id_prefix}_measure
+          else:
+            - lambda: |-
+                id(component_${blueriiot_id_prefix}).publish_status("OFFSET_SYNC_API_DISABLED");
+
+  - id: script_${blueriiot_id_prefix}_submit_raw_measure
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: |-
+              return id(switch_${blueriiot_id_prefix}_api_enabled).state &&
+                     id(homeassistant_time).now().is_valid() &&
+                     id(component_${blueriiot_id_prefix}).has_fresh_packet(120000);
+          then:
+            - lambda: |-
+                id(component_${blueriiot_id_prefix}).publish_status("API_LOGIN");
+            - http_request.post:
+                url: "https://api.riiotlabs.com/prod/user/login"
+                request_headers:
+                  Accept: "*/*"
+                  Content-Type: application/json
+                  Accept-Language: "en-DK;q=1.0, da-DK;q=0.9"
+                json:
+                  email: ${blueriiot_username}
+                  password: ${blueriiot_password}
+                capture_response: true
+                max_response_buffer_size: 4096
+                on_response:
+                  then:
+                    - lambda: |-
+                        id(sensor_${blueriiot_id_prefix}_api_http_status).publish_state(response->status_code);
+                    - if:
+                        condition:
+                          lambda: return response->status_code == 200;
+                        then:
+                          - lambda: |-
+                              bool parsed = json::parse_json(body, [](JsonObject root) -> bool {
+                                JsonObject credentials = root["credentials"].as<JsonObject>();
+                                if (credentials.isNull()) return false;
+                                const char *access_key = credentials["access_key"] | credentials["accessKey"];
+                                const char *secret_key = credentials["secret_key"] | credentials["secretKey"];
+                                const char *session_token = credentials["session_token"] | credentials["sessionToken"];
+                                if (access_key == nullptr || secret_key == nullptr || session_token == nullptr) return false;
+                                id(blueriiot_access_key) = access_key;
+                                id(blueriiot_secret_key) = secret_key;
+                                id(blueriiot_session_token) = session_token;
+                                return true;
+                              });
+                              id(component_${blueriiot_id_prefix}).publish_status(parsed ? "API_POST_RAW" : "API_LOGIN_PARSE_ERROR");
+                              if (parsed) id(script_${blueriiot_id_prefix}_post_raw_measure).execute();
+                        else:
+                          - lambda: |-
+                              id(component_${blueriiot_id_prefix}).publish_status("API_LOGIN_HTTP_ERROR");
+                on_error:
+                  then:
+                    - lambda: |-
+                        id(sensor_${blueriiot_id_prefix}_api_http_status).publish_state(0);
+                        id(component_${blueriiot_id_prefix}).publish_status("API_LOGIN_REQUEST_ERROR");
+          else:
+            - lambda: |-
+                id(component_${blueriiot_id_prefix}).publish_status("API_DISABLED_OR_NO_FRESH_PACKET");
+
+  - id: script_${blueriiot_id_prefix}_post_raw_measure
+    mode: restart
+    then:
+      - lambda: |-
+          auto now = id(homeassistant_time).utcnow();
+          id(blueriiot_amz_date) = now.strftime("%Y%m%dT%H%M%SZ");
+          id(blueriiot_date_stamp) = now.strftime("%Y%m%d");
+          id(blueriiot_measure_created) = now.strftime("%Y-%m-%dT%H:%M:%SZ");
+
+          id(blueriiot_measure_body) = blueriiot_api::raw_measure_body(
+            "${blueriiot_api_blue_device_serial}",
+            "${blueriiot_api_blue_sensor_serial}",
+            "5.0.0",
+            id(blueriiot_measure_created),
+            id(component_${blueriiot_id_prefix}).raw_hex());
+
+          id(blueriiot_authorization) = blueriiot_api::authorization_header(
+            "POST",
+            std::string("/prod") + "/bluetooth_entrypoint",
+            id(blueriiot_measure_body),
+            id(blueriiot_access_key),
+            id(blueriiot_secret_key),
+            id(blueriiot_session_token),
+            id(blueriiot_amz_date),
+            id(blueriiot_date_stamp),
+            "api.riiotlabs.com",
+            "BlueConnect/3.2.1",
+            "en-DK;q=1.0, da-DK;q=0.9");
+      - http_request.post:
+          url: "https://api.riiotlabs.com/prod/bluetooth_entrypoint"
+          request_headers:
+            Accept: "*/*"
+            Content-Type: application/json
+            Accept-Language: "en-DK;q=1.0, da-DK;q=0.9"
+            X-Amz-Date: !lambda return id(blueriiot_amz_date).c_str();
+            X-Amz-Security-Token: !lambda return id(blueriiot_session_token).c_str();
+            Authorization: !lambda return id(blueriiot_authorization).c_str();
+          body: !lambda return id(blueriiot_measure_body).c_str();
+          capture_response: true
+          max_response_buffer_size: 2048
+          on_response:
+            then:
+              - lambda: |-
+                  id(sensor_${blueriiot_id_prefix}_api_http_status).publish_state(response->status_code);
+              - if:
+                  condition:
+                    lambda: return response->status_code == 200;
+                  then:
+                    - lambda: |-
+                        id(component_${blueriiot_id_prefix}).publish_status("API_READ_CALIBRATED");
+                    - delay: ${blueriiot_api_readback_delay}
+                    - script.execute: script_${blueriiot_id_prefix}_read_calibrated_measure
+                  else:
+                    - lambda: |-
+                        id(component_${blueriiot_id_prefix}).publish_status("API_POST_HTTP_ERROR");
+          on_error:
+            then:
+              - lambda: |-
+                  id(sensor_${blueriiot_id_prefix}_api_http_status).publish_state(0);
+                  id(component_${blueriiot_id_prefix}).publish_status("API_POST_REQUEST_ERROR");
+
+  - id: script_${blueriiot_id_prefix}_read_calibrated_measure
+    mode: restart
+    then:
+      - lambda: |-
+          auto now = id(homeassistant_time).utcnow();
+          id(blueriiot_amz_date) = now.strftime("%Y%m%dT%H%M%SZ");
+          id(blueriiot_date_stamp) = now.strftime("%Y%m%d");
+
+          id(blueriiot_authorization) = blueriiot_api::authorization_header(
+            "GET",
+            std::string("/prod") + "/swimming_pool/${blueriiot_api_pool_id}/blue/${blueriiot_api_blue_device_serial}/lastMeasurements",
+            "",
+            id(blueriiot_access_key),
+            id(blueriiot_secret_key),
+            id(blueriiot_session_token),
+            id(blueriiot_amz_date),
+            id(blueriiot_date_stamp),
+            "api.riiotlabs.com",
+            "BlueConnect/3.2.1",
+            "en-DK;q=1.0, da-DK;q=0.9");
+      - http_request.get:
+          url: "https://api.riiotlabs.com/prod/swimming_pool/${blueriiot_api_pool_id}/blue/${blueriiot_api_blue_device_serial}/lastMeasurements"
+          request_headers:
+            Accept: "*/*"
+            Content-Type: application/json
+            Accept-Language: "en-DK;q=1.0, da-DK;q=0.9"
+            X-Amz-Date: !lambda return id(blueriiot_amz_date).c_str();
+            X-Amz-Security-Token: !lambda return id(blueriiot_session_token).c_str();
+            Authorization: !lambda return id(blueriiot_authorization).c_str();
+          capture_response: true
+          max_response_buffer_size: 4096
+          on_response:
+            then:
+              - lambda: |-
+                  id(sensor_${blueriiot_id_prefix}_api_http_status).publish_state(response->status_code);
+              - if:
+                  condition:
+                    lambda: return response->status_code == 200;
+                  then:
+                    - lambda: |-
+                        id(blueriiot_api_readback_valid) = false;
+                        bool parsed = json::parse_json(body, [](JsonObject root) -> bool {
+                          JsonArray data = root["data"].as<JsonArray>();
+                          if (data.isNull()) return false;
+
+                          bool found_temperature = false;
+                          bool found_ph = false;
+                          bool found_orp = false;
+                          bool preferred_temperature = false;
+                          bool preferred_ph = false;
+                          bool preferred_orp = false;
+                          float temperature = 0.0f;
+                          float ph = 0.0f;
+                          float orp = 0.0f;
+
+                          for (JsonObject item : data) {
+                            const char *name = item["name"] | "";
+                            const char *issuer_raw = item["issuer"] | "";
+                            std::string issuer = issuer_raw;
+                            if (issuer == "strip") continue;
+                            if (item["expired"] | false) continue;
+                            if (!item["value"].is<float>() && !item["value"].is<int>()) continue;
+
+                            std::string created = item["created"] | "";
+                            if (created.empty()) {
+                              created = item["updated"] | "";
+                            }
+                            if (!created.empty() && !id(blueriiot_measure_created).empty() &&
+                                created < id(blueriiot_measure_created)) {
+                              continue;
+                            }
+
+                            const bool preferred = issuer == "mobileapp";
+                            const float value = item["value"].as<float>();
+                            const std::string measurement = name;
+                            if (measurement == "temperature" && (!found_temperature || preferred || !preferred_temperature)) {
+                              temperature = value;
+                              found_temperature = true;
+                              preferred_temperature = preferred;
+                            } else if (measurement == "ph" && (!found_ph || preferred || !preferred_ph)) {
+                              ph = value;
+                              found_ph = true;
+                              preferred_ph = preferred;
+                            } else if (measurement == "orp" && (!found_orp || preferred || !preferred_orp)) {
+                              orp = value;
+                              found_orp = true;
+                              preferred_orp = preferred;
+                            }
+                          }
+
+                          if (!(found_temperature && found_ph && found_orp)) return false;
+                          id(blueriiot_api_temperature) = temperature;
+                          id(blueriiot_api_ph) = ph;
+                          id(blueriiot_api_orp) = orp;
+                          return true;
+                        });
+
+                        id(blueriiot_api_readback_valid) = parsed;
+                        if (parsed) {
+                          id(component_${blueriiot_id_prefix}).set_api_values(
+                            id(blueriiot_api_temperature),
+                            id(blueriiot_api_ph),
+                            id(blueriiot_api_orp));
+                          id(script_${blueriiot_id_prefix}_persist_last_good_values).execute();
+                          id(component_${blueriiot_id_prefix}).publish_status("API_OK");
+                        } else {
+                          id(component_${blueriiot_id_prefix}).publish_status("API_NO_CALIBRATED_VALUES");
+                        }
+                    - if:
+                        condition:
+                          lambda: |-
+                            return id(blueriiot_api_readback_valid) && id(blueriiot_offset_sync_requested);
+                        then:
+                          - number.set:
+                              id: number_${blueriiot_id_prefix}_temperature_offset
+                              value: !lambda |-
+                                return id(component_${blueriiot_id_prefix}).derive_temperature_offset(id(blueriiot_api_temperature));
+                          - number.set:
+                              id: number_${blueriiot_id_prefix}_ph_offset
+                              value: !lambda |-
+                                return id(component_${blueriiot_id_prefix}).derive_ph_offset(id(blueriiot_api_ph));
+                          - number.set:
+                              id: number_${blueriiot_id_prefix}_orp_offset
+                              value: !lambda |-
+                                return id(component_${blueriiot_id_prefix}).derive_orp_offset(id(blueriiot_api_orp));
+                          - lambda: |-
+                              id(blueriiot_offset_sync_requested) = false;
+                              id(component_${blueriiot_id_prefix}).publish_status("OFFSET_SYNC_OK");
+                  else:
+                    - lambda: |-
+                        id(component_${blueriiot_id_prefix}).publish_status("API_READ_HTTP_ERROR");
+              - if:
+                  condition:
+                    lambda: |-
+                      return id(blueriiot_offset_sync_requested) && !id(blueriiot_api_readback_valid);
+                  then:
+                    - lambda: |-
+                        id(blueriiot_offset_sync_requested) = false;
+          on_error:
+            then:
+              - lambda: |-
+                  id(sensor_${blueriiot_id_prefix}_api_http_status).publish_state(0);
+                  id(component_${blueriiot_id_prefix}).publish_status("API_READ_REQUEST_ERROR");
+                  id(blueriiot_offset_sync_requested) = false;

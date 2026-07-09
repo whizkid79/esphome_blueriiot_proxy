@@ -1,0 +1,73 @@
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "${friendly_name} Fallback"
+    password: !secret fallback_ap_password
+
+captive_portal:
+
+time:
+  - platform: homeassistant
+    id: homeassistant_time
+
+logger:
+  level: DEBUG
+  initial_level: INFO
+  logs:
+    blueriiot: DEBUG
+    blueriiot_ble: DEBUG
+    blueriiot_api: DEBUG
+    blueriiot_calibration: DEBUG
+    blueriiot_state: DEBUG
+    esp32_ble_tracker: INFO
+    esp32_ble_client: INFO
+    http_request: INFO
+
+safe_mode:
+
+debug:
+  update_interval: 30s
+
+text_sensor:
+  - platform: debug
+    reset_reason:
+      name: "${blueriiot_name_prefix} Reset Reason"
+      id: text_sensor_${blueriiot_id_prefix}_reset_reason
+      entity_category: diagnostic
+    device:
+      name: "${blueriiot_name_prefix} Device Info"
+      id: text_sensor_${blueriiot_id_prefix}_device_info
+      entity_category: diagnostic
+
+sensor:
+  - platform: uptime
+    type: seconds
+    name: "${blueriiot_name_prefix} Uptime"
+    id: sensor_${blueriiot_id_prefix}_uptime
+    entity_category: diagnostic
+
+  - platform: debug
+    free:
+      name: "${blueriiot_name_prefix} Heap Free"
+      id: sensor_${blueriiot_id_prefix}_heap_free
+      entity_category: diagnostic
+    block:
+      name: "${blueriiot_name_prefix} Heap Max Block"
+      id: sensor_${blueriiot_id_prefix}_heap_max_block
+      entity_category: diagnostic
+    min_free:
+      name: "${blueriiot_name_prefix} Heap Min Free"
+      id: sensor_${blueriiot_id_prefix}_heap_min_free
+      entity_category: diagnostic
+    fragmentation:
+      name: "${blueriiot_name_prefix} Heap Fragmentation"
+      id: sensor_${blueriiot_id_prefix}_heap_fragmentation
+      entity_category: diagnostic

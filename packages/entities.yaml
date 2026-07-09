@@ -1,0 +1,329 @@
+globals:
+  - id: global_${blueriiot_id_prefix}_has_last_good_values
+    type: bool
+    restore_value: true
+    initial_value: "false"
+
+  - id: global_${blueriiot_id_prefix}_last_good_temperature
+    type: float
+    restore_value: true
+    initial_value: "0.0"
+
+  - id: global_${blueriiot_id_prefix}_last_good_ph
+    type: float
+    restore_value: true
+    initial_value: "0.0"
+
+  - id: global_${blueriiot_id_prefix}_last_good_orp
+    type: float
+    restore_value: true
+    initial_value: "0.0"
+
+  - id: global_${blueriiot_id_prefix}_last_good_battery
+    type: float
+    restore_value: true
+    initial_value: "0.0"
+
+blueriiot_proxy:
+  id: component_${blueriiot_id_prefix}
+
+sensor:
+  - platform: blueriiot_proxy
+    blueriiot_proxy_id: component_${blueriiot_id_prefix}
+    temperature:
+      id: sensor_${blueriiot_id_prefix}_temperature
+      name: "${blueriiot_name_prefix} Temperature"
+      unit_of_measurement: "°C"
+      icon: mdi:thermometer-water
+      device_class: temperature
+      state_class: measurement
+      accuracy_decimals: 1
+    ph:
+      id: sensor_${blueriiot_id_prefix}_ph
+      name: "${blueriiot_name_prefix} pH"
+      icon: mdi:ph
+      state_class: measurement
+      accuracy_decimals: 1
+    orp:
+      id: sensor_${blueriiot_id_prefix}_orp
+      name: "${blueriiot_name_prefix} ORP"
+      unit_of_measurement: "mV"
+      icon: mdi:chart-bell-curve
+      device_class: voltage
+      state_class: measurement
+      accuracy_decimals: 0
+    battery:
+      id: sensor_${blueriiot_id_prefix}_battery
+      name: "${blueriiot_name_prefix} Battery"
+      unit_of_measurement: "%"
+      icon: mdi:battery-bluetooth-variant
+      device_class: battery
+      state_class: measurement
+      accuracy_decimals: 0
+    temperature_local:
+      id: sensor_${blueriiot_id_prefix}_temperature_local
+      name: "${blueriiot_name_prefix} Temperature Local"
+      unit_of_measurement: "°C"
+      device_class: temperature
+      state_class: measurement
+      accuracy_decimals: 1
+      entity_category: diagnostic
+      disabled_by_default: true
+    ph_local:
+      id: sensor_${blueriiot_id_prefix}_ph_local
+      name: "${blueriiot_name_prefix} pH Local"
+      icon: mdi:ph
+      state_class: measurement
+      accuracy_decimals: 1
+      entity_category: diagnostic
+      disabled_by_default: true
+    orp_local:
+      id: sensor_${blueriiot_id_prefix}_orp_local
+      name: "${blueriiot_name_prefix} ORP Local"
+      unit_of_measurement: "mV"
+      device_class: voltage
+      state_class: measurement
+      accuracy_decimals: 0
+      entity_category: diagnostic
+      disabled_by_default: true
+    temperature_api:
+      id: sensor_${blueriiot_id_prefix}_temperature_api
+      name: "${blueriiot_name_prefix} Temperature API"
+      unit_of_measurement: "°C"
+      device_class: temperature
+      state_class: measurement
+      accuracy_decimals: 1
+      entity_category: diagnostic
+      disabled_by_default: true
+    ph_api:
+      id: sensor_${blueriiot_id_prefix}_ph_api
+      name: "${blueriiot_name_prefix} pH API"
+      icon: mdi:ph
+      state_class: measurement
+      accuracy_decimals: 1
+      entity_category: diagnostic
+      disabled_by_default: true
+    orp_api:
+      id: sensor_${blueriiot_id_prefix}_orp_api
+      name: "${blueriiot_name_prefix} ORP API"
+      unit_of_measurement: "mV"
+      device_class: voltage
+      state_class: measurement
+      accuracy_decimals: 0
+      entity_category: diagnostic
+      disabled_by_default: true
+    raw_length:
+      id: sensor_${blueriiot_id_prefix}_raw_length
+      name: "${blueriiot_name_prefix} Raw Packet Length"
+      entity_category: diagnostic
+      disabled_by_default: true
+      accuracy_decimals: 0
+    raw_frame:
+      id: sensor_${blueriiot_id_prefix}_raw_frame
+      name: "${blueriiot_name_prefix} Raw Frame"
+      entity_category: diagnostic
+      disabled_by_default: true
+      accuracy_decimals: 0
+    raw_temperature:
+      id: sensor_${blueriiot_id_prefix}_raw_temperature
+      name: "${blueriiot_name_prefix} Raw Temperature"
+      entity_category: diagnostic
+      disabled_by_default: true
+      accuracy_decimals: 0
+    raw_ph:
+      id: sensor_${blueriiot_id_prefix}_raw_ph
+      name: "${blueriiot_name_prefix} Raw pH"
+      entity_category: diagnostic
+      disabled_by_default: true
+      accuracy_decimals: 0
+    raw_orp:
+      id: sensor_${blueriiot_id_prefix}_raw_orp
+      name: "${blueriiot_name_prefix} Raw ORP"
+      entity_category: diagnostic
+      disabled_by_default: true
+      accuracy_decimals: 0
+    raw_conductivity:
+      id: sensor_${blueriiot_id_prefix}_raw_conductivity
+      name: "${blueriiot_name_prefix} Raw Conductivity"
+      entity_category: diagnostic
+      disabled_by_default: true
+      accuracy_decimals: 0
+    raw_battery_mv:
+      id: sensor_${blueriiot_id_prefix}_raw_battery_mv
+      name: "${blueriiot_name_prefix} Raw Battery"
+      unit_of_measurement: "mV"
+      entity_category: diagnostic
+      disabled_by_default: true
+      accuracy_decimals: 0
+    raw_extra:
+      id: sensor_${blueriiot_id_prefix}_raw_extra
+      name: "${blueriiot_name_prefix} Raw Extra Byte"
+      entity_category: diagnostic
+      disabled_by_default: true
+      accuracy_decimals: 0
+
+  - platform: template
+    id: sensor_${blueriiot_id_prefix}_api_http_status
+    name: "${blueriiot_name_prefix} API HTTP Status"
+    entity_category: diagnostic
+    accuracy_decimals: 0
+
+text_sensor:
+  - platform: blueriiot_proxy
+    blueriiot_proxy_id: component_${blueriiot_id_prefix}
+    status:
+      id: text_sensor_${blueriiot_id_prefix}_status
+      name: "${blueriiot_name_prefix} Status"
+      entity_category: diagnostic
+    last_error:
+      id: text_sensor_${blueriiot_id_prefix}_last_error
+      name: "${blueriiot_name_prefix} Last Error"
+      entity_category: diagnostic
+    raw_hex:
+      id: text_sensor_${blueriiot_id_prefix}_raw_hex
+      name: "${blueriiot_name_prefix} Raw Hex"
+      entity_category: diagnostic
+      disabled_by_default: true
+    ph_status:
+      id: text_sensor_${blueriiot_id_prefix}_ph_status
+      name: "${blueriiot_name_prefix} pH Status"
+    orp_status:
+      id: text_sensor_${blueriiot_id_prefix}_orp_status
+      name: "${blueriiot_name_prefix} ORP Status"
+
+binary_sensor:
+  - platform: blueriiot_proxy
+    blueriiot_proxy_id: component_${blueriiot_id_prefix}
+    raw_packet_valid:
+      id: binary_sensor_${blueriiot_id_prefix}_raw_packet_valid
+      name: "${blueriiot_name_prefix} Raw Packet Valid"
+      entity_category: diagnostic
+
+number:
+  - platform: template
+    id: number_${blueriiot_id_prefix}_temperature_offset
+    name: "${blueriiot_name_prefix} Temperature Offset"
+    min_value: -5
+    max_value: 5
+    step: 0.1
+    unit_of_measurement: "°C"
+    optimistic: true
+    restore_value: true
+    initial_value: 0
+    entity_category: config
+    on_value:
+      then:
+        - lambda: |-
+            id(component_${blueriiot_id_prefix}).set_temperature_offset(x);
+        - script.execute: script_${blueriiot_id_prefix}_persist_last_good_values
+
+  - platform: template
+    id: number_${blueriiot_id_prefix}_ph_offset
+    name: "${blueriiot_name_prefix} pH Offset"
+    min_value: -2
+    max_value: 2
+    step: 0.01
+    optimistic: true
+    restore_value: true
+    initial_value: 0
+    entity_category: config
+    on_value:
+      then:
+        - lambda: |-
+            id(component_${blueriiot_id_prefix}).set_ph_offset(x);
+        - script.execute: script_${blueriiot_id_prefix}_persist_last_good_values
+
+  - platform: template
+    id: number_${blueriiot_id_prefix}_orp_offset
+    name: "${blueriiot_name_prefix} ORP Offset"
+    min_value: -250
+    max_value: 250
+    step: 1
+    unit_of_measurement: "mV"
+    optimistic: true
+    restore_value: true
+    initial_value: 0
+    entity_category: config
+    on_value:
+      then:
+        - lambda: |-
+            id(component_${blueriiot_id_prefix}).set_orp_offset(x);
+        - script.execute: script_${blueriiot_id_prefix}_persist_last_good_values
+
+select:
+  - platform: template
+    id: select_${blueriiot_id_prefix}_calibration_source
+    name: "${blueriiot_name_prefix} Calibration Source"
+    options:
+      - local
+      - api
+    optimistic: true
+    restore_value: true
+    initial_option: local
+    entity_category: config
+    set_action:
+      - lambda: |-
+          id(component_${blueriiot_id_prefix}).set_calibration_source(x);
+      - script.execute: script_${blueriiot_id_prefix}_persist_last_good_values
+
+switch:
+  - platform: template
+    id: switch_${blueriiot_id_prefix}_api_enabled
+    name: "${blueriiot_name_prefix} Use BlueRiiot API"
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    entity_category: config
+    turn_on_action:
+      - lambda: |-
+          id(component_${blueriiot_id_prefix}).set_api_enabled(true);
+      - script.execute: script_${blueriiot_id_prefix}_persist_last_good_values
+    turn_off_action:
+      - lambda: |-
+          id(component_${blueriiot_id_prefix}).set_api_enabled(false);
+      - script.execute: script_${blueriiot_id_prefix}_persist_last_good_values
+
+button:
+  - platform: template
+    id: button_${blueriiot_id_prefix}_measure
+    name: "${blueriiot_name_prefix} Measure"
+    on_press:
+      - script.execute: script_${blueriiot_id_prefix}_measure
+
+  - platform: template
+    id: button_${blueriiot_id_prefix}_sync_offsets
+    name: "${blueriiot_name_prefix} Sync Offsets From API"
+    entity_category: config
+    on_press:
+      - script.execute: script_${blueriiot_id_prefix}_sync_offsets_from_api
+
+script:
+  - id: script_${blueriiot_id_prefix}_persist_last_good_values
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: |-
+              return id(component_${blueriiot_id_prefix}).has_final_values();
+          then:
+            - lambda: |-
+                id(global_${blueriiot_id_prefix}_has_last_good_values) = true;
+                id(global_${blueriiot_id_prefix}_last_good_temperature) = id(component_${blueriiot_id_prefix}).final_temperature();
+                id(global_${blueriiot_id_prefix}_last_good_ph) = id(component_${blueriiot_id_prefix}).final_ph();
+                id(global_${blueriiot_id_prefix}_last_good_orp) = id(component_${blueriiot_id_prefix}).final_orp();
+                id(global_${blueriiot_id_prefix}_last_good_battery) = id(component_${blueriiot_id_prefix}).final_battery();
+
+  - id: script_${blueriiot_id_prefix}_publish_last_good_values
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: |-
+              return id(global_${blueriiot_id_prefix}_has_last_good_values);
+          then:
+            - lambda: |-
+                id(component_${blueriiot_id_prefix}).publish_cached_final_values(
+                  id(global_${blueriiot_id_prefix}_last_good_temperature),
+                  id(global_${blueriiot_id_prefix}_last_good_ph),
+                  id(global_${blueriiot_id_prefix}_last_good_orp),
+                  id(global_${blueriiot_id_prefix}_last_good_battery)
+                );

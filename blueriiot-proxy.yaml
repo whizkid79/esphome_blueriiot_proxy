@@ -1,0 +1,43 @@
+substitutions:
+  device_name: blueriiot-proxy
+  friendly_name: BlueRiiot Proxy
+  blueriiot_name_prefix: BlueRiiot Pool
+  blueriiot_id_prefix: p1
+  blueriiot_mac: !secret blueriiot_mac
+  blueriiot_api_pool_id: !secret blueriiot_api_pool_id
+  blueriiot_api_blue_device_serial: !secret blueriiot_api_blue_device_serial
+  blueriiot_api_blue_sensor_serial: !secret blueriiot_api_blue_sensor_serial
+  blueriiot_username: !secret blueriiot_username
+  blueriiot_password: !secret blueriiot_password
+  blueriiot_api_readback_delay: 10s
+  blueriiot_ble_timeout: 35s
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  on_boot:
+    priority: -100
+    then:
+      - wait_until:
+          condition:
+            api.connected:
+              state_subscription_only: true
+      - script.execute: script_${blueriiot_id_prefix}_publish_last_good_values
+
+esp32:
+  variant: esp32c3
+  flash_size: 4MB
+  framework:
+    type: esp-idf
+
+external_components:
+  - source:
+      type: local
+      path: components
+    components: [blueriiot_proxy]
+
+packages:
+  base: !include packages/base.yaml
+  entities: !include packages/entities.yaml
+  ble: !include packages/ble.yaml
+  api_cloud: !include packages/api.yaml

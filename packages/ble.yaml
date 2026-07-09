@@ -1,0 +1,90 @@
+globals:
+  - id: blueriiot_measurement_running
+    type: bool
+    restore_value: no
+    initial_value: "false"
+
+esp32_ble_tracker:
+  scan_parameters:
+    active: false
+    interval: 1000ms
+    window: 120ms
+    continuous: false
+  software_coexistence: true
+  on_ble_advertise:
+    - mac_address: ${blueriiot_mac}
+      then:
+        - logger.log:
+            tag: blueriiot_ble
+            level: DEBUG
+            format: "Found BlueRiiot advertisement"
+
+ble_client:
+  - mac_address: ${blueriiot_mac}
+    id: ble_client_${blueriiot_id_prefix}
+    on_connect:
+      then:
+        - lambda: |-
+            id(component_${blueriiot_id_prefix}).publish_status("BLE_CONNECTED");
+        - delay: 2s
+        - ble_client.ble_write:
+            id: ble_client_${blueriiot_id_prefix}
+            service_uuid: "F3300001-F0A2-9B06-0C59-1BC4763B5C00"
+            characteristic_uuid: "F3300002-F0A2-9B06-0C59-1BC4763B5C00"
+            value: !lambda |-
+              return {0x01};
+        - lambda: |-
+            id(component_${blueriiot_id_prefix}).publish_status("BLE_WRITE_SENT");
+    on_disconnect:
+      then:
+        - lambda: |-
+            id(component_${blueriiot_id_prefix}).publish_status("BLE_DISCONNECTED");
+
+switch:
+  - platform: ble_client
+    ble_client_id: ble_client_${blueriiot_id_prefix}
+    id: switch_${blueriiot_id_prefix}_ble_enable
+    name: "${blueriiot_name_prefix} BLE Enable"
+    restore_mode: ALWAYS_OFF
+    internal: true
+
+script:
+  - id: script_${blueriiot_id_prefix}_measure
+    mode: single
+    then:
+      - lambda: |-
+          id(blueriiot_measurement_running) = true;
+          id(component_${blueriiot_id_prefix}).publish_status("BLE_CONNECTING");
+      - switch.turn_on: switch_${blueriiot_id_prefix}_ble_enable
+      - delay: ${blueriiot_ble_timeout}
+      - if:
+          condition:
+            lambda: return id(blueriiot_measurement_running);
+          then:
+            - lambda: |-
+                id(component_${blueriiot_id_prefix}).publish_status("BLE_TIMEOUT");
+                id(blueriiot_measurement_running) = false;
+            - switch.turn_off: switch_${blueriiot_id_prefix}_ble_enable
+
+text_sensor:
+  - platform: ble_client
+    id: text_sensor_${blueriiot_id_prefix}_reading_data
+    name: "${blueriiot_name_prefix} Reading Data"
+    internal: true
+    ble_client_id: ble_client_${blueriiot_id_prefix}
+    service_uuid: "F3300001-F0A2-9B06-0C59-1BC4763B5C00"
+    characteristic_uuid: "F3300003-F0A2-9B06-0C59-1BC4763B5C00"
+    notify: true
+    update_interval: never
+    on_notify:
+      then:
+        - lambda: |-
+            const bool ok = id(component_${blueriiot_id_prefix}).handle_packet(x);
+            id(blueriiot_measurement_running) = false;
+            if (ok) {
+              id(script_${blueriiot_id_prefix}_persist_last_good_values).execute();
+            }
+            if (ok && id(switch_${blueriiot_id_prefix}_api_enabled).state) {
+              id(script_${blueriiot_id_prefix}_submit_raw_measure).execute();
+            }
+        - switch.turn_off: switch_${blueriiot_id_prefix}_ble_enable
