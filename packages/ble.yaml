@@ -6,10 +6,10 @@ globals:
 
 esp32_ble_tracker:
   scan_parameters:
-    active: true
-    interval: 320ms
-    window: 300ms
-    continuous: false
+    active: false
+    interval: 1000ms
+    window: 700ms
+    continuous: true
   software_coexistence: true
   on_ble_advertise:
     - mac_address: ${blueriiot_mac}
@@ -25,7 +25,6 @@ ble_client:
     auto_connect: true
     on_connect:
       then:
-        - esp32_ble_tracker.stop_scan:
         - lambda: |-
             id(component_${blueriiot_id_prefix}).publish_status("BLE_CONNECTED");
         - delay: 2s
@@ -39,7 +38,6 @@ ble_client:
             id(component_${blueriiot_id_prefix}).publish_status("BLE_WRITE_SENT");
     on_disconnect:
       then:
-        - esp32_ble_tracker.stop_scan:
         - lambda: |-
             id(component_${blueriiot_id_prefix}).publish_status("BLE_DISCONNECTED");
 
@@ -56,24 +54,9 @@ script:
     mode: single
     then:
       - lambda: |-
-          id(component_${blueriiot_id_prefix}).publish_status("BLE_WIFI_PAUSE");
-      - wifi.disable:
-      - delay: 2s
-      - lambda: |-
           id(blueriiot_measurement_running) = true;
-          id(component_${blueriiot_id_prefix}).publish_status("BLE_CLIENT_ENABLE");
-      - switch.turn_on: switch_${blueriiot_id_prefix}_ble_enable
-      - delay: 500ms
-      - logger.log:
-          tag: blueriiot_ble
-          level: INFO
-          format: "Starting BlueRiiot measurement scan"
-      - lambda: |-
-          id(component_${blueriiot_id_prefix}).publish_status("BLE_SCAN_START");
-      - esp32_ble_tracker.start_scan:
-          continuous: true
-      - lambda: |-
           id(component_${blueriiot_id_prefix}).publish_status("BLE_CONNECTING");
+      - switch.turn_on: switch_${blueriiot_id_prefix}_ble_enable
       - delay: ${blueriiot_ble_timeout}
       - if:
           condition:
@@ -82,9 +65,7 @@ script:
             - lambda: |-
                 id(component_${blueriiot_id_prefix}).publish_status("BLE_TIMEOUT");
                 id(blueriiot_measurement_running) = false;
-            - esp32_ble_tracker.stop_scan:
             - switch.turn_off: switch_${blueriiot_id_prefix}_ble_enable
-            - wifi.enable:
 
 text_sensor:
   - platform: ble_client
@@ -107,6 +88,4 @@ text_sensor:
             if (ok && id(switch_${blueriiot_id_prefix}_api_enabled).state) {
               id(script_${blueriiot_id_prefix}_submit_raw_measure).execute();
             }
-        - esp32_ble_tracker.stop_scan:
         - switch.turn_off: switch_${blueriiot_id_prefix}_ble_enable
-        - wifi.enable:
