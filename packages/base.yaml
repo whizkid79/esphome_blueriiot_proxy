@@ -1,6 +1,7 @@
 api:
   encryption:
     key: !secret api_encryption_key
+  reboot_timeout: 0s
 
 ota:
   - platform: esphome
@@ -9,6 +10,7 @@ ota:
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
+  power_save_mode: none
   ap:
     ssid: "${friendly_name} Fallback"
     password: !secret fallback_ap_password
