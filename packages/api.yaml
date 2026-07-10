@@ -4,6 +4,7 @@ http_request:
   id: blueriiot_http
   useragent: "BlueConnect/3.2.1"
   timeout: 20s
+  watchdog_timeout: 30s
   verify_ssl: true
   buffer_size_rx: 4096
   buffer_size_tx: 2048
@@ -42,6 +43,14 @@ globals:
     restore_value: no
     initial_value: '""'
   - id: blueriiot_offset_sync_requested
+    type: bool
+    restore_value: no
+    initial_value: "false"
+  - id: blueriiot_api_request_running
+    type: bool
+    restore_value: no
+    initial_value: "false"
+  - id: blueriiot_api_login_valid
     type: bool
     restore_value: no
     initial_value: "false"
@@ -91,10 +100,14 @@ script:
           condition:
             lambda: |-
               return id(switch_${blueriiot_id_prefix}_api_enabled).state &&
+                     !id(blueriiot_api_request_running) &&
                      id(homeassistant_time).now().is_valid() &&
                      id(component_${blueriiot_id_prefix}).has_fresh_packet(120000);
           then:
             - lambda: |-
+                id(blueriiot_api_request_running) = true;
+                id(blueriiot_api_login_valid) = false;
+                id(blueriiot_api_readback_valid) = false;
                 id(component_${blueriiot_id_prefix}).publish_status("API_LOGIN");
             - http_request.post:
                 url: "https://api.riiotlabs.com/prod/user/login"
@@ -116,6 +129,7 @@ script:
                           lambda: return response->status_code == 200;
                         then:
                           - lambda: |-
+                              id(blueriiot_api_login_valid) = false;
                               bool parsed = json::parse_json(body, [](JsonObject root) -> bool {
                                 JsonObject credentials = root["credentials"].as<JsonObject>();
                                 if (credentials.isNull()) return false;
@@ -128,24 +142,40 @@ script:
                                 id(blueriiot_session_token) = session_token;
                                 return true;
                               });
-                              id(component_${blueriiot_id_prefix}).publish_status(parsed ? "API_POST_RAW" : "API_LOGIN_PARSE_ERROR");
-                              if (parsed) id(script_${blueriiot_id_prefix}_post_raw_measure).execute();
+                              id(blueriiot_api_login_valid) = parsed;
+                              id(component_${blueriiot_id_prefix}).publish_status(parsed ? "API_LOGIN_OK" : "API_LOGIN_PARSE_ERROR");
+                              if (!parsed) {
+                                id(blueriiot_api_request_running) = false;
+                                id(blueriiot_offset_sync_requested) = false;
+                              }
+                          - if:
+                              condition:
+                                lambda: return id(blueriiot_api_login_valid);
+                              then:
+                                - delay: 250ms
+                                - script.execute: script_${blueriiot_id_prefix}_post_raw_measure
                         else:
                           - lambda: |-
+                              id(blueriiot_api_request_running) = false;
+                              id(blueriiot_offset_sync_requested) = false;
                               id(component_${blueriiot_id_prefix}).publish_status("API_LOGIN_HTTP_ERROR");
                 on_error:
                   then:
                     - lambda: |-
+                        id(blueriiot_api_request_running) = false;
+                        id(blueriiot_offset_sync_requested) = false;
                         id(sensor_${blueriiot_id_prefix}_api_http_status).publish_state(0);
                         id(component_${blueriiot_id_prefix}).publish_status("API_LOGIN_REQUEST_ERROR");
           else:
             - lambda: |-
-                id(component_${blueriiot_id_prefix}).publish_status("API_DISABLED_OR_NO_FRESH_PACKET");
+                id(component_${blueriiot_id_prefix}).publish_status(
+                  id(blueriiot_api_request_running) ? "API_BUSY" : "API_DISABLED_OR_NO_FRESH_PACKET");
 
   - id: script_${blueriiot_id_prefix}_post_raw_measure
     mode: restart
     then:
       - lambda: |-
+          id(component_${blueriiot_id_prefix}).publish_status("API_SIGN_RAW");
           auto now = id(homeassistant_time).utcnow();
           id(blueriiot_amz_date) = now.strftime("%Y%m%dT%H%M%SZ");
           id(blueriiot_date_stamp) = now.strftime("%Y%m%d");
@@ -170,6 +200,9 @@ script:
             "api.riiotlabs.com",
             "BlueConnect/3.2.1",
             "en-DK;q=1.0, da-DK;q=0.9");
+      - delay: 250ms
+      - lambda: |-
+          id(component_${blueriiot_id_prefix}).publish_status("API_POST_RAW");
       - http_request.post:
           url: "https://api.riiotlabs.com/prod/bluetooth_entrypoint"
           request_headers:
@@ -196,10 +229,14 @@ script:
                     - script.execute: script_${blueriiot_id_prefix}_read_calibrated_measure
                   else:
                     - lambda: |-
+                        id(blueriiot_api_request_running) = false;
+                        id(blueriiot_offset_sync_requested) = false;
                         id(component_${blueriiot_id_prefix}).publish_status("API_POST_HTTP_ERROR");
           on_error:
             then:
               - lambda: |-
+                  id(blueriiot_api_request_running) = false;
+                  id(blueriiot_offset_sync_requested) = false;
                   id(sensor_${blueriiot_id_prefix}_api_http_status).publish_state(0);
                   id(component_${blueriiot_id_prefix}).publish_status("API_POST_REQUEST_ERROR");
 
@@ -207,6 +244,7 @@ script:
     mode: restart
     then:
       - lambda: |-
+          id(component_${blueriiot_id_prefix}).publish_status("API_SIGN_READBACK");
           auto now = id(homeassistant_time).utcnow();
           id(blueriiot_amz_date) = now.strftime("%Y%m%dT%H%M%SZ");
           id(blueriiot_date_stamp) = now.strftime("%Y%m%d");
@@ -223,6 +261,9 @@ script:
             "api.riiotlabs.com",
             "BlueConnect/3.2.1",
             "en-DK;q=1.0, da-DK;q=0.9");
+      - delay: 250ms
+      - lambda: |-
+          id(component_${blueriiot_id_prefix}).publish_status("API_GET_CALIBRATED");
       - http_request.get:
           url: "https://api.riiotlabs.com/prod/swimming_pool/${blueriiot_api_pool_id}/blue/${blueriiot_api_blue_device_serial}/lastMeasurements"
           request_headers:
@@ -311,6 +352,7 @@ script:
                         } else {
                           id(component_${blueriiot_id_prefix}).publish_status("API_NO_CALIBRATED_VALUES");
                         }
+                        id(blueriiot_api_request_running) = false;
                     - if:
                         condition:
                           lambda: |-
@@ -333,6 +375,8 @@ script:
                               id(component_${blueriiot_id_prefix}).publish_status("OFFSET_SYNC_OK");
                   else:
                     - lambda: |-
+                        id(blueriiot_api_request_running) = false;
+                        id(blueriiot_offset_sync_requested) = false;
                         id(component_${blueriiot_id_prefix}).publish_status("API_READ_HTTP_ERROR");
               - if:
                   condition:
@@ -344,6 +388,7 @@ script:
           on_error:
             then:
               - lambda: |-
+                  id(blueriiot_api_request_running) = false;
                   id(sensor_${blueriiot_id_prefix}_api_http_status).publish_state(0);
                   id(component_${blueriiot_id_prefix}).publish_status("API_READ_REQUEST_ERROR");
                   id(blueriiot_offset_sync_requested) = false;
