@@ -56,6 +56,10 @@ script:
     mode: single
     then:
       - lambda: |-
+          id(component_${blueriiot_id_prefix}).publish_status("BLE_WIFI_PAUSE");
+      - wifi.disable:
+      - delay: 2s
+      - lambda: |-
           id(blueriiot_measurement_running) = true;
           id(component_${blueriiot_id_prefix}).publish_status("BLE_CLIENT_ENABLE");
       - switch.turn_on: switch_${blueriiot_id_prefix}_ble_enable
@@ -80,6 +84,7 @@ script:
                 id(blueriiot_measurement_running) = false;
             - esp32_ble_tracker.stop_scan:
             - switch.turn_off: switch_${blueriiot_id_prefix}_ble_enable
+            - wifi.enable:
 
 text_sensor:
   - platform: ble_client
@@ -104,3 +109,4 @@ text_sensor:
             }
         - esp32_ble_tracker.stop_scan:
         - switch.turn_off: switch_${blueriiot_id_prefix}_ble_enable
+        - wifi.enable:
