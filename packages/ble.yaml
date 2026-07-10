@@ -6,9 +6,9 @@ globals:
 
 esp32_ble_tracker:
   scan_parameters:
-    active: false
-    interval: 1000ms
-    window: 120ms
+    active: true
+    interval: 320ms
+    window: 300ms
     continuous: false
   software_coexistence: true
   on_ble_advertise:
@@ -16,7 +16,7 @@ esp32_ble_tracker:
       then:
         - logger.log:
             tag: blueriiot_ble
-            level: DEBUG
+            level: INFO
             format: "Found BlueRiiot advertisement"
 
 ble_client:
@@ -57,10 +57,12 @@ script:
     then:
       - lambda: |-
           id(blueriiot_measurement_running) = true;
-          id(component_${blueriiot_id_prefix}).publish_status("BLE_CONNECTING");
-      - switch.turn_on: switch_${blueriiot_id_prefix}_ble_enable
+          id(component_${blueriiot_id_prefix}).publish_status("BLE_SCANNING");
       - esp32_ble_tracker.start_scan:
           continuous: true
+      - switch.turn_on: switch_${blueriiot_id_prefix}_ble_enable
+      - lambda: |-
+          id(component_${blueriiot_id_prefix}).publish_status("BLE_CONNECTING");
       - delay: ${blueriiot_ble_timeout}
       - if:
           condition:
