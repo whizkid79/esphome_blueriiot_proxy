@@ -31,7 +31,11 @@ esp32_ble_tracker:
   scan_parameters:
     active: false
     interval: 1000ms
-    window: 700ms
+    # 30% duty cycle: enough to catch BlueRiiot advertisements for a
+    # connect-by-MAC while leaving WiFi/mDNS/OTA most of the radio time
+    # (single-core ESP32-C3 shares one radio between BLE and WiFi).
+    # Raise towards 700ms only if discovery becomes unreliable.
+    window: 300ms
     continuous: false
   software_coexistence: true
   on_ble_advertise:
@@ -39,7 +43,7 @@ esp32_ble_tracker:
       then:
         - logger.log:
             tag: blueriiot_ble
-            level: VERBOSE
+            level: DEBUG
             format: "Found BlueRiiot advertisement"
         - if:
             condition:
@@ -59,17 +63,14 @@ api:
           lambda: return !id(blueriiot_scanner_running);
         then:
           - switch.turn_off: switch_${blueriiot_id_prefix}_ble_enable
-          - lambda: |-
-              id(blueriiot_scanner_running) = true;
-              id(component_${blueriiot_id_prefix}).publish_status("BLE_SCAN_READY");
-          - esp32_ble_tracker.start_scan:
-              continuous: true
+          - script.execute: script_${blueriiot_id_prefix}_start_scanner
   on_client_disconnected:
     - if:
         condition:
           not:
             api.connected:
         then:
+          - script.stop: script_${blueriiot_id_prefix}_start_scanner
           - lambda: |-
               id(blueriiot_measurement_running) = false;
               id(blueriiot_connection_attempt_started) = false;
@@ -133,6 +134,31 @@ switch:
     internal: true
 
 script:
+  # Starts the continuous scan once the BLE stack is actually up.
+  # Right after boot the first API client can connect before the BLE stack
+  # is active; esp32_ble_tracker.start_scan would then be silently ignored
+  # while blueriiot_scanner_running claims the scanner is up (stale flag).
+  - id: script_${blueriiot_id_prefix}_start_scanner
+    mode: restart
+    then:
+      - wait_until:
+          condition:
+            ble.enabled:
+          timeout: 15s
+      - if:
+          condition:
+            ble.enabled:
+          then:
+            - lambda: |-
+                id(blueriiot_scanner_running) = true;
+                id(component_${blueriiot_id_prefix}).publish_status("BLE_SCAN_READY");
+            - esp32_ble_tracker.start_scan:
+                continuous: true
+          else:
+            - lambda: |-
+                id(blueriiot_scanner_running) = false;
+                id(component_${blueriiot_id_prefix}).publish_status("BLE_STACK_DISABLED");
+
   - id: script_${blueriiot_id_prefix}_measure
     mode: single
     then:
@@ -161,9 +187,30 @@ script:
                       id(component_${blueriiot_id_prefix}).publish_status("BLE_ADVERTISEMENT_TIMEOUT");
                   - script.stop: script_${blueriiot_id_prefix}_attempt_guard
                   - switch.turn_off: switch_${blueriiot_id_prefix}_ble_enable
+                  # A full cycle without a single advertisement can also mean
+                  # the scanner flag is stale (start_scan was silently
+                  # ignored). Re-arm the scanner; if it is actually running
+                  # the extra start_scan is ignored and the flag stays true.
+                  - if:
+                      condition:
+                        api.connected:
+                      then:
+                        - lambda: |-
+                            id(blueriiot_scanner_running) = false;
+                        - script.execute: script_${blueriiot_id_prefix}_start_scanner
           else:
-            - lambda: |-
-                id(component_${blueriiot_id_prefix}).publish_status("BLE_WAITING_FOR_API");
+            # Distinguish "API is down" from "scanner flag never got set"
+            # and try to recover the latter instead of only reporting it.
+            - if:
+                condition:
+                  api.connected:
+                then:
+                  - lambda: |-
+                      id(component_${blueriiot_id_prefix}).publish_status("BLE_SCANNER_NOT_READY");
+                  - script.execute: script_${blueriiot_id_prefix}_start_scanner
+                else:
+                  - lambda: |-
+                      id(component_${blueriiot_id_prefix}).publish_status("BLE_WAITING_FOR_API");
 
   - id: script_${blueriiot_id_prefix}_attempt_guard
     mode: restart
