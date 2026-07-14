@@ -4,12 +4,34 @@ globals:
     restore_value: no
     initial_value: "false"
 
+  - id: blueriiot_connection_attempt_started
+    type: bool
+    restore_value: no
+    initial_value: "false"
+
+  - id: blueriiot_connected
+    type: bool
+    restore_value: no
+    initial_value: "false"
+
+  - id: blueriiot_scanner_running
+    type: bool
+    restore_value: no
+    initial_value: "false"
+
+  - id: blueriiot_last_packet_ok
+    type: bool
+    restore_value: no
+    initial_value: "false"
+
+esp32_ble:
+  connection_timeout: 20s
+
 esp32_ble_tracker:
   scan_parameters:
     active: false
     interval: 1000ms
     window: 700ms
-    duration: ${blueriiot_ble_timeout}
     continuous: false
   software_coexistence: true
   on_ble_advertise:
@@ -19,6 +41,45 @@ esp32_ble_tracker:
             tag: blueriiot_ble
             level: VERBOSE
             format: "Found BlueRiiot advertisement"
+        - if:
+            condition:
+              lambda: |-
+                return id(blueriiot_measurement_running) &&
+                       !id(blueriiot_connection_attempt_started);
+            then:
+              - lambda: |-
+                  id(blueriiot_connection_attempt_started) = true;
+                  id(component_${blueriiot_id_prefix}).publish_status("BLE_ADVERTISEMENT_FOUND");
+              - script.execute: script_${blueriiot_id_prefix}_attempt_guard
+
+api:
+  on_client_connected:
+    - if:
+        condition:
+          lambda: return !id(blueriiot_scanner_running);
+        then:
+          - switch.turn_off: switch_${blueriiot_id_prefix}_ble_enable
+          - lambda: |-
+              id(blueriiot_scanner_running) = true;
+              id(component_${blueriiot_id_prefix}).publish_status("BLE_SCAN_READY");
+          - esp32_ble_tracker.start_scan:
+              continuous: true
+  on_client_disconnected:
+    - if:
+        condition:
+          not:
+            api.connected:
+        then:
+          - lambda: |-
+              id(blueriiot_measurement_running) = false;
+              id(blueriiot_connection_attempt_started) = false;
+              id(blueriiot_connected) = false;
+              id(blueriiot_scanner_running) = false;
+              id(component_${blueriiot_id_prefix}).publish_status("BLE_WAITING_FOR_API");
+          - script.stop: script_${blueriiot_id_prefix}_attempt_guard
+          - script.stop: script_${blueriiot_id_prefix}_measure
+          - switch.turn_off: switch_${blueriiot_id_prefix}_ble_enable
+          - esp32_ble_tracker.stop_scan:
 
 ble_client:
   - mac_address: ${blueriiot_mac}
@@ -26,23 +87,42 @@ ble_client:
     auto_connect: true
     on_connect:
       then:
-        - esp32_ble_tracker.stop_scan:
-        - lambda: |-
-            id(component_${blueriiot_id_prefix}).publish_status("BLE_CONNECTED");
-        - delay: 2s
-        - ble_client.ble_write:
-            id: ble_client_${blueriiot_id_prefix}
-            service_uuid: "F3300001-F0A2-9B06-0C59-1BC4763B5C00"
-            characteristic_uuid: "F3300002-F0A2-9B06-0C59-1BC4763B5C00"
-            value: !lambda |-
-              return {0x01};
-        - lambda: |-
-            id(component_${blueriiot_id_prefix}).publish_status("BLE_WRITE_SENT");
+        - if:
+            condition:
+              lambda: return id(blueriiot_measurement_running);
+            then:
+              - lambda: |-
+                  id(blueriiot_connected) = true;
+                  id(component_${blueriiot_id_prefix}).publish_status("BLE_CONNECTED");
+              - delay: 2s
+              - if:
+                  condition:
+                    lambda: return id(blueriiot_measurement_running);
+                  then:
+                    - ble_client.ble_write:
+                        id: ble_client_${blueriiot_id_prefix}
+                        service_uuid: "F3300001-F0A2-9B06-0C59-1BC4763B5C00"
+                        characteristic_uuid: "F3300002-F0A2-9B06-0C59-1BC4763B5C00"
+                        value: !lambda |-
+                          return {0x01};
+                    - lambda: |-
+                        id(component_${blueriiot_id_prefix}).publish_status("BLE_WRITE_SENT");
+            else:
+              - switch.turn_off: switch_${blueriiot_id_prefix}_ble_enable
     on_disconnect:
       then:
-        - esp32_ble_tracker.stop_scan:
-        - lambda: |-
-            id(component_${blueriiot_id_prefix}).publish_status("BLE_DISCONNECTED");
+        - if:
+            condition:
+              lambda: return id(blueriiot_measurement_running);
+            then:
+              - lambda: |-
+                  id(blueriiot_measurement_running) = false;
+                  id(blueriiot_connection_attempt_started) = false;
+                  id(blueriiot_connected) = false;
+                  id(component_${blueriiot_id_prefix}).publish_status("BLE_DISCONNECTED_ERROR");
+              - script.stop: script_${blueriiot_id_prefix}_attempt_guard
+              - script.stop: script_${blueriiot_id_prefix}_measure
+              - switch.turn_off: switch_${blueriiot_id_prefix}_ble_enable
 
 switch:
   - platform: ble_client
@@ -56,22 +136,52 @@ script:
   - id: script_${blueriiot_id_prefix}_measure
     mode: single
     then:
-      - lambda: |-
-          id(blueriiot_measurement_running) = true;
-          id(component_${blueriiot_id_prefix}).publish_status("BLE_CONNECTING");
-      - switch.turn_on: switch_${blueriiot_id_prefix}_ble_enable
-      - esp32_ble_tracker.start_scan:
-          continuous: false
-      - delay: ${blueriiot_ble_timeout}
+      - if:
+          condition:
+            lambda: return id(blueriiot_scanner_running);
+          then:
+            - lambda: |-
+                id(blueriiot_measurement_running) = true;
+                id(blueriiot_connection_attempt_started) = false;
+                id(blueriiot_connected) = false;
+                id(blueriiot_last_packet_ok) = false;
+                id(component_${blueriiot_id_prefix}).publish_status("BLE_WAITING_FOR_ADVERTISEMENT");
+            - switch.turn_on: switch_${blueriiot_id_prefix}_ble_enable
+            - delay: ${blueriiot_ble_timeout}
+            - if:
+                condition:
+                  lambda: |-
+                    return id(blueriiot_measurement_running) &&
+                           !id(blueriiot_connection_attempt_started);
+                then:
+                  - lambda: |-
+                      id(blueriiot_measurement_running) = false;
+                      id(blueriiot_connection_attempt_started) = false;
+                      id(blueriiot_connected) = false;
+                      id(component_${blueriiot_id_prefix}).publish_status("BLE_ADVERTISEMENT_TIMEOUT");
+                  - script.stop: script_${blueriiot_id_prefix}_attempt_guard
+                  - switch.turn_off: switch_${blueriiot_id_prefix}_ble_enable
+          else:
+            - lambda: |-
+                id(component_${blueriiot_id_prefix}).publish_status("BLE_WAITING_FOR_API");
+
+  - id: script_${blueriiot_id_prefix}_attempt_guard
+    mode: restart
+    then:
+      - delay: 25s
       - if:
           condition:
             lambda: return id(blueriiot_measurement_running);
           then:
             - lambda: |-
-                id(component_${blueriiot_id_prefix}).publish_status("BLE_TIMEOUT");
+                const bool connected = id(blueriiot_connected);
                 id(blueriiot_measurement_running) = false;
-            - esp32_ble_tracker.stop_scan:
+                id(blueriiot_connection_attempt_started) = false;
+                id(blueriiot_connected) = false;
+                id(component_${blueriiot_id_prefix}).publish_status(
+                  connected ? "BLE_PACKET_TIMEOUT" : "BLE_CONNECT_TIMEOUT");
             - switch.turn_off: switch_${blueriiot_id_prefix}_ble_enable
+            - script.stop: script_${blueriiot_id_prefix}_measure
 
 text_sensor:
   - platform: ble_client
@@ -86,13 +196,20 @@ text_sensor:
     on_notify:
       then:
         - lambda: |-
-            const bool ok = id(component_${blueriiot_id_prefix}).handle_packet(x);
+            id(blueriiot_last_packet_ok) = id(component_${blueriiot_id_prefix}).handle_packet(x);
             id(blueriiot_measurement_running) = false;
-            if (ok) {
-              id(script_${blueriiot_id_prefix}_persist_last_good_values).execute();
-            }
-            if (ok && id(switch_${blueriiot_id_prefix}_api_enabled).state) {
-              id(script_${blueriiot_id_prefix}_submit_raw_measure).execute();
-            }
-        - esp32_ble_tracker.stop_scan:
+            id(blueriiot_connection_attempt_started) = false;
+            id(blueriiot_connected) = false;
+        - script.stop: script_${blueriiot_id_prefix}_attempt_guard
+        - script.stop: script_${blueriiot_id_prefix}_measure
         - switch.turn_off: switch_${blueriiot_id_prefix}_ble_enable
+        - if:
+            condition:
+              lambda: return id(blueriiot_last_packet_ok);
+            then:
+              - script.execute: script_${blueriiot_id_prefix}_persist_last_good_values
+              - if:
+                  condition:
+                    lambda: return id(switch_${blueriiot_id_prefix}_api_enabled).state;
+                  then:
+                    - script.execute: script_${blueriiot_id_prefix}_submit_raw_measure

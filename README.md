@@ -37,6 +37,16 @@ Expected result:
 - ESPHome validates YAML and external component code generation.
 - PlatformIO builds the firmware for ESP32-C3 with ESP-IDF.
 
+## BLE Lifecycle
+
+- The BLE tracker remains stopped during boot and starts after the first native API client connects.
+- Scanning is passive and continuous while an API client is connected. Passive scanning does not send scan requests to the BlueRiiot sensor.
+- Pressing Measure enables the BLE client. The first matching advertisement starts one bounded connection attempt.
+- The BLE client is disabled after a valid packet, a disconnect, or a timeout. API work starts only after the BLE client is disabled.
+- `${blueriiot_ble_timeout}` limits how long Measure waits for an advertisement. A detected sensor gets a separate 25-second connection and packet deadline; the ESP32 BLE connection timeout is 20 seconds.
+
+`packages/ble.yaml` adds native API connection callbacks. ESPHome merges these callbacks with an existing `api:` configuration.
+
 ## Calibration Modes
 
 - `local`: final values use raw BLE values plus Home Assistant offsets.
@@ -94,7 +104,8 @@ The API package uses ESP-IDF's default root certificate bundle via `verify_ssl: 
 
 ## Last Compile Verification
 
-- Date: 2026-07-09
+- Date: 2026-07-14
 - Command: `docker run --rm -v "$PWD:/config" -v "$PWD/packages/secrets.example.yaml:/config/secrets.yaml:ro" ghcr.io/esphome/esphome:latest compile /config/blueriiot-proxy.yaml`
 - Result: `PASS`
 - ESPHome version from output: `2026.6.5`
+- ESP-IDF version from output: `5.5.4`
