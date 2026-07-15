@@ -255,6 +255,7 @@ text_sensor:
               lambda: return id(blueriiot_last_packet_ok);
             then:
               - script.execute: script_${blueriiot_id_prefix}_persist_last_good_values
+              - script.execute: script_${blueriiot_id_prefix}_record_successful_measurement_timestamp
               - if:
                   condition:
                     lambda: return id(switch_${blueriiot_id_prefix}_api_enabled).state;

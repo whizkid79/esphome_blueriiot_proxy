@@ -24,6 +24,11 @@ globals:
     restore_value: true
     initial_value: "0.0"
 
+  - id: global_${blueriiot_id_prefix}_last_successful_measurement_timestamp
+    type: uint32_t
+    restore_value: true
+    initial_value: "0"
+
 blueriiot_proxy:
   id: component_${blueriiot_id_prefix}
 
@@ -168,6 +173,22 @@ sensor:
     entity_category: diagnostic
     accuracy_decimals: 0
 
+  - platform: template
+    id: sensor_${blueriiot_id_prefix}_api_duration
+    name: "${blueriiot_name_prefix} API Duration"
+    unit_of_measurement: "ms"
+    icon: mdi:timer-outline
+    entity_category: diagnostic
+    accuracy_decimals: 0
+
+  - platform: template
+    id: sensor_${blueriiot_id_prefix}_last_successful_measurement_timestamp
+    name: "${blueriiot_name_prefix} Last Successful Measurement Epoch"
+    unit_of_measurement: "s"
+    icon: mdi:clock-check-outline
+    entity_category: diagnostic
+    accuracy_decimals: 0
+
 text_sensor:
   - platform: blueriiot_proxy
     blueriiot_proxy_id: component_${blueriiot_id_prefix}
@@ -190,6 +211,13 @@ text_sensor:
     orp_status:
       id: text_sensor_${blueriiot_id_prefix}_orp_status
       name: "${blueriiot_name_prefix} ORP Status"
+
+  - platform: template
+    id: text_sensor_${blueriiot_id_prefix}_last_successful_measurement
+    name: "${blueriiot_name_prefix} Last Successful Measurement"
+    icon: mdi:clock-check-outline
+    entity_category: diagnostic
+    update_interval: never
 
 binary_sensor:
   - platform: blueriiot_proxy
@@ -327,3 +355,36 @@ script:
                   id(global_${blueriiot_id_prefix}_last_good_orp),
                   id(global_${blueriiot_id_prefix}_last_good_battery)
                 );
+            - script.execute: script_${blueriiot_id_prefix}_publish_last_successful_measurement_timestamp
+
+  - id: script_${blueriiot_id_prefix}_record_successful_measurement_timestamp
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: |-
+              return id(homeassistant_time).now().is_valid();
+          then:
+            - lambda: |-
+                id(global_${blueriiot_id_prefix}_last_successful_measurement_timestamp) =
+                  id(homeassistant_time).now().timestamp;
+            - script.execute: script_${blueriiot_id_prefix}_publish_last_successful_measurement_timestamp
+          else:
+            - lambda: |-
+                id(text_sensor_${blueriiot_id_prefix}_last_successful_measurement).publish_state("Time unavailable");
+
+  - id: script_${blueriiot_id_prefix}_publish_last_successful_measurement_timestamp
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: |-
+              return id(global_${blueriiot_id_prefix}_last_successful_measurement_timestamp) > 0;
+          then:
+            - lambda: |-
+                const uint32_t timestamp =
+                  id(global_${blueriiot_id_prefix}_last_successful_measurement_timestamp);
+                id(sensor_${blueriiot_id_prefix}_last_successful_measurement_timestamp).publish_state(timestamp);
+                auto time = esphome::ESPTime::from_epoch_local(timestamp);
+                id(text_sensor_${blueriiot_id_prefix}_last_successful_measurement).publish_state(
+                  time.strftime("%Y-%m-%d %H:%M:%S"));

@@ -124,6 +124,7 @@ script:
                   then:
                     - lambda: |-
                         id(sensor_${blueriiot_id_prefix}_api_http_status).publish_state(response->status_code);
+                        id(sensor_${blueriiot_id_prefix}_api_duration).publish_state(response->duration_ms);
                     - if:
                         condition:
                           lambda: return response->status_code == 200;
@@ -213,12 +214,11 @@ script:
             X-Amz-Security-Token: !lambda return id(blueriiot_session_token).c_str();
             Authorization: !lambda return id(blueriiot_authorization).c_str();
           body: !lambda return id(blueriiot_measure_body).c_str();
-          capture_response: true
-          max_response_buffer_size: 2048
           on_response:
             then:
               - lambda: |-
                   id(sensor_${blueriiot_id_prefix}_api_http_status).publish_state(response->status_code);
+                  id(sensor_${blueriiot_id_prefix}_api_duration).publish_state(response->duration_ms);
               - if:
                   condition:
                     lambda: return response->status_code == 200;
@@ -279,6 +279,7 @@ script:
             then:
               - lambda: |-
                   id(sensor_${blueriiot_id_prefix}_api_http_status).publish_state(response->status_code);
+                  id(sensor_${blueriiot_id_prefix}_api_duration).publish_state(response->duration_ms);
               - if:
                   condition:
                     lambda: return response->status_code == 200;
