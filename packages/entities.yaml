@@ -181,6 +181,56 @@ sensor:
     entity_category: diagnostic
     accuracy_decimals: 0
 
+  - platform: template
+    id: sensor_${blueriiot_id_prefix}_ble_connect_attempts
+    name: "${blueriiot_name_prefix} BLE Connect Attempts"
+    icon: mdi:bluetooth-connect
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 30s
+    lambda: |-
+      return id(blueriiot_ble_connect_attempts);
+
+  - platform: template
+    id: sensor_${blueriiot_id_prefix}_ble_connect_timeouts
+    name: "${blueriiot_name_prefix} BLE Connect Timeouts"
+    icon: mdi:bluetooth-off
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 30s
+    lambda: |-
+      return id(blueriiot_ble_connect_timeouts);
+
+  - platform: template
+    id: sensor_${blueriiot_id_prefix}_ble_packet_timeouts
+    name: "${blueriiot_name_prefix} BLE Packet Timeouts"
+    icon: mdi:timer-alert-outline
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 30s
+    lambda: |-
+      return id(blueriiot_ble_packet_timeouts);
+
+  - platform: template
+    id: sensor_${blueriiot_id_prefix}_ble_disconnect_errors
+    name: "${blueriiot_name_prefix} BLE Disconnect Errors"
+    icon: mdi:bluetooth-off
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 30s
+    lambda: |-
+      return id(blueriiot_ble_disconnect_errors);
+
+  - platform: template
+    id: sensor_${blueriiot_id_prefix}_ble_successful_packets
+    name: "${blueriiot_name_prefix} BLE Successful Packets"
+    icon: mdi:bluetooth
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: 30s
+    lambda: |-
+      return id(blueriiot_ble_successful_packets);
+
 text_sensor:
   - platform: blueriiot_proxy
     blueriiot_proxy_id: component_${blueriiot_id_prefix}
@@ -209,6 +259,13 @@ text_sensor:
     name: "${blueriiot_name_prefix} Last Successful Measurement"
     device_class: timestamp
     icon: mdi:clock-check-outline
+    entity_category: diagnostic
+    update_interval: never
+
+  - platform: template
+    id: text_sensor_${blueriiot_id_prefix}_ble_last_timeout
+    name: "${blueriiot_name_prefix} BLE Last Timeout"
+    icon: mdi:timer-alert-outline
     entity_category: diagnostic
     update_interval: never
 

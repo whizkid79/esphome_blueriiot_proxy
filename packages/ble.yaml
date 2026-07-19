@@ -24,6 +24,31 @@ globals:
     restore_value: no
     initial_value: "false"
 
+  - id: blueriiot_ble_connect_attempts
+    type: uint32_t
+    restore_value: no
+    initial_value: "0"
+
+  - id: blueriiot_ble_connect_timeouts
+    type: uint32_t
+    restore_value: no
+    initial_value: "0"
+
+  - id: blueriiot_ble_packet_timeouts
+    type: uint32_t
+    restore_value: no
+    initial_value: "0"
+
+  - id: blueriiot_ble_disconnect_errors
+    type: uint32_t
+    restore_value: no
+    initial_value: "0"
+
+  - id: blueriiot_ble_successful_packets
+    type: uint32_t
+    restore_value: no
+    initial_value: "0"
+
 esp32_ble:
   connection_timeout: 20s
 
@@ -52,6 +77,7 @@ esp32_ble_tracker:
                        !id(blueriiot_connection_attempt_started);
             then:
               - lambda: |-
+                  id(blueriiot_ble_connect_attempts)++;
                   id(blueriiot_connection_attempt_started) = true;
                   id(component_${blueriiot_id_prefix}).publish_status("BLE_ADVERTISEMENT_FOUND");
               - script.execute: script_${blueriiot_id_prefix}_attempt_guard
@@ -117,10 +143,12 @@ ble_client:
               lambda: return id(blueriiot_measurement_running);
             then:
               - lambda: |-
+                  id(blueriiot_ble_disconnect_errors)++;
                   id(blueriiot_measurement_running) = false;
                   id(blueriiot_connection_attempt_started) = false;
                   id(blueriiot_connected) = false;
                   id(component_${blueriiot_id_prefix}).publish_status("BLE_DISCONNECTED_ERROR");
+                  id(text_sensor_${blueriiot_id_prefix}_ble_last_timeout).publish_state("DISCONNECTED_ERROR");
               - script.stop: script_${blueriiot_id_prefix}_attempt_guard
               - script.stop: script_${blueriiot_id_prefix}_measure
               - switch.turn_off: switch_${blueriiot_id_prefix}_ble_enable
@@ -215,13 +243,20 @@ script:
   - id: script_${blueriiot_id_prefix}_attempt_guard
     mode: restart
     then:
-      - delay: 25s
+      - delay: 90s
       - if:
           condition:
             lambda: return id(blueriiot_measurement_running);
           then:
             - lambda: |-
                 const bool connected = id(blueriiot_connected);
+                if (connected) {
+                  id(blueriiot_ble_packet_timeouts)++;
+                  id(text_sensor_${blueriiot_id_prefix}_ble_last_timeout).publish_state("PACKET_TIMEOUT");
+                } else {
+                  id(blueriiot_ble_connect_timeouts)++;
+                  id(text_sensor_${blueriiot_id_prefix}_ble_last_timeout).publish_state("CONNECT_TIMEOUT");
+                }
                 id(blueriiot_measurement_running) = false;
                 id(blueriiot_connection_attempt_started) = false;
                 id(blueriiot_connected) = false;
@@ -254,6 +289,9 @@ text_sensor:
             condition:
               lambda: return id(blueriiot_last_packet_ok);
             then:
+              - lambda: |-
+                  id(blueriiot_ble_successful_packets)++;
+                  id(text_sensor_${blueriiot_id_prefix}_ble_last_timeout).publish_state("NONE");
               - script.execute: script_${blueriiot_id_prefix}_persist_last_good_values
               - script.execute: script_${blueriiot_id_prefix}_record_successful_measurement_timestamp
               - if:
