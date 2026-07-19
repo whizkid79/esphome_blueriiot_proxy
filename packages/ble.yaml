@@ -60,7 +60,7 @@ esp32_ble_tracker:
     # connect-by-MAC while leaving WiFi/mDNS/OTA most of the radio time
     # (single-core ESP32-C3 shares one radio between BLE and WiFi).
     # Raise towards 700ms only if discovery becomes unreliable.
-    window: 300ms
+    window: 500ms
     continuous: false
   software_coexistence: true
   on_ble_advertise:
